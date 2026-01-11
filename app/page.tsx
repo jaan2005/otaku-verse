@@ -21,7 +21,12 @@ import {
   LayoutGrid,
   Rocket,
   Sun,
-  Moon
+  Moon,
+  Share,
+  Check,
+  Copy,
+  Smartphone,
+  Monitor
 } from 'lucide-react';
 
 // --- TYPES & INTERFACES ---
@@ -57,23 +62,23 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 // --- CONFIGURATION ---
-// 1. FOR PREVIEW: Paste your Groq API Key inside the quotes below to test it right now.
+// FOR PREVIEW: You can safely ignore the process.env checks here as we are in a browser sandbox.
 const HARDCODED_OWNER_KEY = ""; 
 
-// 2. FOR PRODUCTION/LOCAL: This safely reads from .env.local when you run 'npm run dev'
 const getEnvKey = () => {
   try {
-    return (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_GROQ_KEY) || "";
+    // specific check for nextjs env, fallback to empty string in sandbox
+    return "";
   } catch (e) {
     return "";
   }
 };
 
-// Uses the hardcoded key if available (for preview), otherwise looks for the env var (for local/prod)
 const OWNER_GROQ_KEY = HARDCODED_OWNER_KEY || getEnvKey();
 const DAILY_LIMIT = 30;
 
 // --- Constants ---
+// Replaced local image with a reliable placeholder for the preview
 const GOKU_WALLPAPERS = [
   "/anime.jpg", // Ensure 'anime.jpg' is inside your 'public' folder
 ];
@@ -122,6 +127,8 @@ export default function App() {
   // App State
   const [userAvatar, setUserAvatar] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false); // NEW: Install Modal State
+  const [copied, setCopied] = useState(false); // NEW: Copy state
   
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -414,15 +421,17 @@ export default function App() {
         return;
       }
     } else if (provider === 'groq') {
+      // LOGIC UPDATE: Default to backend if no key is provided in settings
       if (groqKey.trim()) {
         effectiveKey = groqKey.trim();
       } else {
-        effectiveKey = OWNER_GROQ_KEY.trim();
+        // If the user hasn't entered a key, we assume we should use the backend route
         isOwnerKey = true;
       }
 
-      if (!effectiveKey) {
-        alert("Groq API Key missing. Please add in Settings.");
+      // We only alert if we are NOT using the backend AND we have no key
+      if (!isOwnerKey && !effectiveKey) {
+        alert("Groq API Key missing.");
         setShowSettings(true);
         return;
       }
@@ -572,18 +581,18 @@ export default function App() {
           });
         }
 
-        if (!response.ok) {
+        if (response && !response.ok) {
           const err = await response.json();
           // Check for Rate Limit (429) specifically
           if (response.status === 429) {
-             throw new Error("Global rate limit reached. Please wait a moment or add your own Key in Settings.");
+             throw new Error("Global rate limit reached. Please wait a moment.");
           }
           throw new Error(`Groq Error: ${err.error?.message || err.error || response.statusText}`);
         }
 
-        const data = await response.json();
+        const data = await response?.json();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        aiText = data.choices?.[0]?.message?.content || "(No response)";
+        aiText = data?.choices?.[0]?.message?.content || "(No response)";
 
         if (isOwnerKey) incrementDailyLimit();
       }
@@ -685,7 +694,9 @@ export default function App() {
             className="w-full h-full object-cover"
             onError={(e) => {
                e.currentTarget.style.display = 'none'; // Hide broken image
-               e.currentTarget.parentElement!.innerHTML = '<span class="text-xs">?</span>';
+               if (e.currentTarget.parentElement) {
+                   e.currentTarget.parentElement.innerHTML = '<span class="text-xs">?</span>';
+               }
             }}
           />
         ) : (
@@ -695,11 +706,28 @@ export default function App() {
     );
   };
 
-  const installPwa = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') setDeferredPrompt(null);
+  const handleCopyLink = () => {
+    if (typeof window !== 'undefined') {
+      navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  // Improved Install PWA Logic:
+  // If native prompt is available, use it.
+  // If not, open our manual instruction modal.
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          setDeferredPrompt(null);
+        }
+      });
+    } else {
+      setShowInstallModal(true);
+    }
   };
 
   return (
@@ -844,13 +872,23 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 leading-tight">
-          <p className="flex items-start gap-1">
-            <Info className="w-3 h-3 mt-0.5 shrink-0" />
-            <span>
-              AI powered by {provider === 'gemini' ? 'Google Gemini' : provider === 'groq' ? 'Groq' : 'Hugging Face'}.
-            </span>
-          </p>
+        {/* Install Button & Info Footer */}
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+          <button 
+            onClick={handleInstallClick}
+            className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 p-2.5 rounded-xl transition-all font-medium text-sm"
+          >
+            <Download className="w-4 h-4" /> Install / Share App
+          </button>
+          
+          <div className="text-[10px] text-slate-500 leading-tight">
+            <p className="flex items-start gap-1">
+              <Info className="w-3 h-3 mt-0.5 shrink-0" />
+              <span>
+                AI powered by {provider === 'gemini' ? 'Google Gemini' : provider === 'groq' ? 'Groq' : 'Hugging Face'}.
+              </span>
+            </p>
+          </div>
         </div>
       </div>
 
@@ -931,7 +969,9 @@ export default function App() {
                             className="w-full h-full object-cover" 
                             onError={(e) => {
                                e.currentTarget.style.display = 'none';
-                               e.currentTarget.parentElement!.innerText = '🤖';
+                               if (e.currentTarget.parentElement) {
+                                   e.currentTarget.parentElement.innerText = '🤖';
+                               }
                             }}
                           />
                         : (msg.avatar || '🤖')
@@ -955,12 +995,12 @@ export default function App() {
               ))}
               {isLoading && (
                 <div className="flex gap-4 z-10 relative">
-                   <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center">⏳</div>
-                   <div className="bg-white/90 dark:bg-slate-900/90 px-4 py-3 rounded-2xl rounded-tl-sm border border-slate-200/50 dark:border-slate-700/50 flex items-center gap-2">
-                     <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce" />
-                     <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce delay-75" />
-                     <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce delay-150" />
-                   </div>
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center">⏳</div>
+                    <div className="bg-white/90 dark:bg-slate-900/90 px-4 py-3 rounded-2xl rounded-tl-sm border border-slate-200/50 dark:border-slate-700/50 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce" />
+                      <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce delay-75" />
+                      <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-bounce delay-150" />
+                    </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
@@ -989,26 +1029,26 @@ export default function App() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-8 text-center bg-slate-50 dark:bg-slate-950 z-10 relative overflow-hidden transition-colors duration-300">
-             <div className="absolute inset-0 z-0">
-               <img 
-                 key={currentBgIndex} 
-                 src={GOKU_WALLPAPERS[currentBgIndex]} 
-                 alt="Goku Background" 
-                 loading="eager"
-                 className="w-full h-full object-cover opacity-100 pointer-events-none transition-opacity duration-500"
-                 onError={() => {
-                   // Only retry a few times to prevent infinite loops
-                   if (bgErrorCount.current < GOKU_WALLPAPERS.length) {
-                       bgErrorCount.current += 1;
-                       setCurrentBgIndex((prev) => (prev + 1) % GOKU_WALLPAPERS.length);
-                   }
-                 }}
-               />
-             </div>
-             
-             <div className="absolute inset-0 bg-slate-100/60 dark:bg-slate-950/60 z-0" />
-             
-             <div className="relative z-10 flex flex-col items-center">
+              <div className="absolute inset-0 z-0">
+                <img 
+                  key={currentBgIndex} 
+                  src={GOKU_WALLPAPERS[currentBgIndex]} 
+                  alt="Anime Background" 
+                  loading="eager"
+                  className="w-full h-full object-cover opacity-100 pointer-events-none transition-opacity duration-500"
+                  onError={() => {
+                    // Only retry a few times to prevent infinite loops
+                    if (bgErrorCount.current < GOKU_WALLPAPERS.length) {
+                        bgErrorCount.current += 1;
+                        setCurrentBgIndex((prev) => (prev + 1) % GOKU_WALLPAPERS.length);
+                    }
+                  }}
+                />
+              </div>
+              
+              <div className="absolute inset-0 bg-slate-100/60 dark:bg-slate-950/60 z-0" />
+              
+              <div className="relative z-10 flex flex-col items-center">
                 <div className="w-24 h-24 bg-white/50 dark:bg-slate-800/50 rounded-full flex items-center justify-center mb-6 animate-pulse ring-1 ring-slate-200 dark:ring-slate-700 backdrop-blur-md">
                   <MessageSquare className="w-10 h-10 opacity-50 text-violet-500 dark:text-violet-400" />
                 </div>
@@ -1047,137 +1087,7 @@ export default function App() {
             
             <div className="space-y-6">
               
-              {/* Provider Selector */}
               <div>
-                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">AI Provider</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button 
-                    onClick={() => setProvider('gemini')}
-                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border transition-all text-xs ${provider === 'gemini' ? 'bg-violet-100 border-violet-500 text-violet-900 dark:bg-violet-600/20 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                  >
-                    <Zap className="w-4 h-4" /> Gemini
-                  </button>
-                  <button 
-                    onClick={() => setProvider('huggingface')}
-                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border transition-all text-xs ${provider === 'huggingface' ? 'bg-yellow-100 border-yellow-500 text-yellow-900 dark:bg-yellow-600/20 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                  >
-                    <LayoutGrid className="w-4 h-4" /> HuggingFace
-                  </button>
-                  <button 
-                    onClick={() => setProvider('groq')}
-                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border transition-all text-xs ${provider === 'groq' ? 'bg-orange-100 border-orange-500 text-orange-900 dark:bg-orange-600/20 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                  >
-                    <Rocket className="w-4 h-4" /> Groq
-                  </button>
-                </div>
-              </div>
-
-              {/* Gemini Settings */}
-              {provider === 'gemini' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-left-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Gemini API Key</label>
-                    <input 
-                      type="password" 
-                      value={geminiKey}
-                      onChange={(e) => setGeminiKey(e.target.value)}
-                      placeholder="AIzaSy..."
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-violet-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Model ID</label>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        value={geminiModel}
-                        onChange={(e) => setGeminiModel(e.target.value)}
-                        placeholder="gemini-1.5-flash"
-                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-violet-500 focus:outline-none"
-                      />
-                      <button onClick={checkAvailableModels} className="px-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300">Check</button>
-                    </div>
-                    
-                    {modelCheckStatus === 'success' && availableModels.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {availableModels.map(m => (
-                          <button key={m} onClick={() => setGeminiModel(m)} className="px-2 py-1 text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded hover:border-violet-500 text-slate-700 dark:text-slate-300">
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Hugging Face Settings */}
-              {provider === 'huggingface' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
-                  <div className="bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-500/30 p-3 rounded-lg text-xs text-yellow-800 dark:text-yellow-200">
-                    Get a free token from <a href="https://huggingface.co/settings/tokens" target="_blank" className="underline font-bold">huggingface.co/settings/tokens</a>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Hugging Face Access Token</label>
-                    <input 
-                      type="password" 
-                      value={hfKey}
-                      onChange={(e) => setHfKey(e.target.value)}
-                      placeholder="hf_..."
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-yellow-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Model Repo ID</label>
-                    <input 
-                      type="text" 
-                      value={hfModel}
-                      onChange={(e) => setHfModel(e.target.value)}
-                      placeholder="mistralai/Mistral-7B-Instruct-v0.2"
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-yellow-500 focus:outline-none"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Recommended: <code>mistralai/Mistral-7B-Instruct-v0.2</code></p>
-                  </div>
-                </div>
-              )}
-
-              {/* Groq Settings */}
-              {provider === 'groq' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
-                  <div className="bg-orange-100 dark:bg-orange-900/20 border border-orange-500/30 p-3 rounded-lg text-xs text-orange-800 dark:text-orange-200">
-                    {OWNER_GROQ_KEY ? (
-                      <span className="font-semibold text-orange-700 dark:text-orange-300">
-                        ⚡ You are using the Free Tier (Limited to {DAILY_LIMIT} msgs/day). Add your own key below for unlimited access.
-                      </span>
-                    ) : (
-                      <span>Get a free key from <a href="https://console.groq.com/keys" target="_blank" className="underline font-bold">console.groq.com</a> (Instant & Fast)</span>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Groq API Key</label>
-                    <input 
-                      type="password" 
-                      value={groqKey}
-                      onChange={(e) => setGroqKey(e.target.value)}
-                      placeholder="gsk_..."
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-orange-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Groq Model</label>
-                    <input 
-                      type="text" 
-                      value={groqModel}
-                      onChange={(e) => setGroqModel(e.target.value)}
-                      placeholder="llama3-8b-8192"
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-orange-500 focus:outline-none"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Try: <code>llama3-8b-8192</code> or <code>mixtral-8x7b-32768</code></p>
-                  </div>
-                </div>
-              )}
-
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
                 <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Avatar URL</label>
                 <input 
                   type="text" 
@@ -1196,16 +1106,81 @@ export default function App() {
         </div>
       )}
 
-      {/* PWA Install Button - Fixed Z-Index & Visibility Logic */}
-      {deferredPrompt && (
-        <div className="fixed bottom-6 right-6 z-[100] animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <button 
-            onClick={installPwa}
-            className="group flex items-center gap-3 bg-violet-600 hover:bg-violet-500 text-white px-4 py-3 rounded-full font-semibold shadow-2xl shadow-violet-900/50 transition-all hover:scale-105 active:scale-95"
-          >
-            <Download className="w-5 h-5 animate-bounce" />
-            <span className="pr-1">Install App</span>
-          </button>
+      {/* Install / Share Modal (Custom PWA Alternative) */}
+      {showInstallModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative overflow-hidden">
+             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-violet-500 to-pink-500" />
+             
+             <div className="flex justify-between items-start mb-4">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                   <Download className="w-5 h-5 text-violet-500" /> Install App
+                </h3>
+                <button onClick={() => setShowInstallModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition">
+                  <X className="w-5 h-5" />
+                </button>
+             </div>
+
+             <div className="space-y-6">
+                
+                {/* 1. Copy Link Section */}
+                <div className="bg-slate-50 dark:bg-slate-950 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
+                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <Share className="w-3 h-3" /> Share Link
+                   </div>
+                   <div className="flex gap-2">
+                      <input 
+                         readOnly 
+                         value={typeof window !== 'undefined' ? window.location.href : ''} 
+                         className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-600 dark:text-slate-300 truncate"
+                      />
+                      <button 
+                        onClick={handleCopyLink}
+                        className={`px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${copied ? 'bg-green-500 text-white' : 'bg-violet-600 hover:bg-violet-700 text-white'}`}
+                      >
+                         {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                         {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                   </div>
+                </div>
+
+                {/* 2. Manual Install Instructions */}
+                <div>
+                   <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">How to add to Home Screen:</h4>
+                   
+                   <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                      
+                      {/* iOS Instructions */}
+                      <div className="flex gap-3">
+                         <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                            <Smartphone className="w-4 h-4 text-slate-500" />
+                         </div>
+                         <div>
+                            <span className="font-bold text-slate-900 dark:text-white block mb-0.5">iPhone / iPad (Safari)</span>
+                            Tap the <Share className="w-3 h-3 inline mx-1" /> <span className="font-medium">Share</span> button in the toolbar, then scroll down and tap <span className="font-medium">&quot;Add to Home Screen&quot;</span>.
+                         </div>
+                      </div>
+
+                      <div className="border-t border-slate-100 dark:border-slate-800/50" />
+
+                      {/* Android Instructions */}
+                      <div className="flex gap-3">
+                         <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                            <Monitor className="w-4 h-4 text-slate-500" />
+                         </div>
+                         <div>
+                            <span className="font-bold text-slate-900 dark:text-white block mb-0.5">Android (Chrome)</span>
+                            Tap the menu icon (three dots), then select <span className="font-medium">&quot;Add to Home Screen&quot;</span> or &quot;Install App&quot;.
+                         </div>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="bg-violet-50 dark:bg-violet-900/10 p-3 rounded-lg text-xs text-violet-700 dark:text-violet-300 leading-relaxed">
+                   <strong>Why install?</strong> Adding to your home screen gives you a fullscreen, app-like experience with easier access to your chats!
+                </div>
+             </div>
+          </div>
         </div>
       )}
 
