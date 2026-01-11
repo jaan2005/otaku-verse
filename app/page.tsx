@@ -65,8 +65,7 @@ const DAILY_LIMIT = 30;
 
 // --- Constants ---
 const GOKU_WALLPAPERS = [
-  "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=2670&auto=format&fit=crop", 
-  "https://images.unsplash.com/photo-1541562232579-512a21360020?q=80&w=2574&auto=format&fit=crop"
+  "/anime.jpg", // Ensure 'anime.jpg' is inside your 'public' folder
 ];
 
 // --- Helper: Simple Markdown Formatter ---
