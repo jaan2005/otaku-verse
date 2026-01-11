@@ -61,26 +61,12 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
-// --- CONFIGURATION ---
-// FOR PREVIEW: You can safely ignore the process.env checks here as we are in a browser sandbox.
-const HARDCODED_OWNER_KEY = ""; 
-
-const getEnvKey = () => {
-  try {
-    // specific check for nextjs env, fallback to empty string in sandbox
-    return "";
-  } catch (e) {
-    return "";
-  }
-};
-
-const OWNER_GROQ_KEY = HARDCODED_OWNER_KEY || getEnvKey();
 const DAILY_LIMIT = 30;
 
 // --- Constants ---
-// Replaced local image with a reliable placeholder for the preview
 const GOKU_WALLPAPERS = [
-  "/anime.jpg", // Ensure 'anime.jpg' is inside your 'public' folder
+  "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=2670&auto=format&fit=crop", 
+  "https://images.unsplash.com/photo-1541562232579-512a21360020?q=80&w=2574&auto=format&fit=crop"
 ];
 
 // --- Helper: Simple Markdown Formatter ---
@@ -107,7 +93,9 @@ const FormatText = ({ text }: { text: string }) => {
 
 export default function App() {
   // --- State ---
-  const [provider, setProvider] = useState<'gemini' | 'huggingface' | 'groq'>('gemini');
+  // FIXED: Default to 'groq' so you can see the badge immediately
+  const [provider, setProvider] = useState<'gemini' | 'huggingface' | 'groq'>('groq');
+  
   const [geminiKey, setGeminiKey] = useState(''); 
   const [hfKey, setHfKey] = useState('');
   const [groqKey, setGroqKey] = useState(''); 
@@ -127,8 +115,8 @@ export default function App() {
   // App State
   const [userAvatar, setUserAvatar] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [showInstallModal, setShowInstallModal] = useState(false); // NEW: Install Modal State
-  const [copied, setCopied] = useState(false); // NEW: Copy state
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [copied, setCopied] = useState(false);
   
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -301,7 +289,7 @@ export default function App() {
 
   // --- Helper: Render Daily Limit Badge ---
   const renderUsageBadge = () => {
-    // Only show if using Groq AND user hasn't provided their own key
+    // Show limit if provider is Groq and NO custom key is present
     if (provider !== 'groq' || groqKey) return null;
     
     const percentage = (dailyCount / DAILY_LIMIT) * 100;
@@ -421,24 +409,17 @@ export default function App() {
         return;
       }
     } else if (provider === 'groq') {
-      // LOGIC UPDATE: Default to backend if no key is provided in settings
       if (groqKey.trim()) {
         effectiveKey = groqKey.trim();
       } else {
-        // If the user hasn't entered a key, we assume we should use the backend route
+        // Assume backend proxy
         isOwnerKey = true;
       }
 
-      // We only alert if we are NOT using the backend AND we have no key
-      if (!isOwnerKey && !effectiveKey) {
-        alert("Groq API Key missing.");
-        setShowSettings(true);
-        return;
-      }
-
+      // Check for limit locally first to save a network call
       if (isOwnerKey && dailyCount >= DAILY_LIMIT) {
         setLimitReached(true);
-        alert(`Daily limit of ${DAILY_LIMIT} messages reached for the free tier. Please add your own Groq API Key in settings for unlimited access.`);
+        alert(`Daily limit of ${DAILY_LIMIT} messages reached for the free tier.`);
         return;
       }
     }
@@ -543,7 +524,7 @@ export default function App() {
         }
       }
 
-      // Groq (Updated to use Backend Proxy for Owner Mode)
+      // Groq
       else if (provider === 'groq') {
         const payload = {
           model: groqModel,
@@ -564,9 +545,7 @@ export default function App() {
           // --- SECURE MODE: Use our own Backend Proxy ---
           response = await fetch("/api/chat", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
         } else {
@@ -583,7 +562,6 @@ export default function App() {
 
         if (response && !response.ok) {
           const err = await response.json();
-          // Check for Rate Limit (429) specifically
           if (response.status === 429) {
              throw new Error("Global rate limit reached. Please wait a moment.");
           }
@@ -1087,7 +1065,137 @@ export default function App() {
             
             <div className="space-y-6">
               
+              {/* Provider Selector */}
               <div>
+                <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">AI Provider</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button 
+                    onClick={() => setProvider('gemini')}
+                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border transition-all text-xs ${provider === 'gemini' ? 'bg-violet-100 border-violet-500 text-violet-900 dark:bg-violet-600/20 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                  >
+                    <Zap className="w-4 h-4" /> Gemini
+                  </button>
+                  <button 
+                    onClick={() => setProvider('huggingface')}
+                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border transition-all text-xs ${provider === 'huggingface' ? 'bg-yellow-100 border-yellow-500 text-yellow-900 dark:bg-yellow-600/20 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                  >
+                    <LayoutGrid className="w-4 h-4" /> HuggingFace
+                  </button>
+                  <button 
+                    onClick={() => setProvider('groq')}
+                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border transition-all text-xs ${provider === 'groq' ? 'bg-orange-100 border-orange-500 text-orange-900 dark:bg-orange-600/20 dark:text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                  >
+                    <Rocket className="w-4 h-4" /> Groq
+                  </button>
+                </div>
+              </div>
+
+              {/* Gemini Settings */}
+              {provider === 'gemini' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-left-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Gemini API Key</label>
+                    <input 
+                      type="password" 
+                      value={geminiKey}
+                      onChange={(e) => setGeminiKey(e.target.value)}
+                      placeholder="AIzaSy..."
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-violet-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Model ID</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={geminiModel}
+                        onChange={(e) => setGeminiModel(e.target.value)}
+                        placeholder="gemini-1.5-flash"
+                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-violet-500 focus:outline-none"
+                      />
+                      <button onClick={checkAvailableModels} className="px-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300">Check</button>
+                    </div>
+                    
+                    {modelCheckStatus === 'success' && availableModels.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {availableModels.map(m => (
+                          <button key={m} onClick={() => setGeminiModel(m)} className="px-2 py-1 text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded hover:border-violet-500 text-slate-700 dark:text-slate-300">
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Hugging Face Settings */}
+              {provider === 'huggingface' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+                  <div className="bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-500/30 p-3 rounded-lg text-xs text-yellow-800 dark:text-yellow-200">
+                    Get a free token from <a href="https://huggingface.co/settings/tokens" target="_blank" className="underline font-bold">huggingface.co/settings/tokens</a>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Hugging Face Access Token</label>
+                    <input 
+                      type="password" 
+                      value={hfKey}
+                      onChange={(e) => setHfKey(e.target.value)}
+                      placeholder="hf_..."
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-yellow-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Model Repo ID</label>
+                    <input 
+                      type="text" 
+                      value={hfModel}
+                      onChange={(e) => setHfModel(e.target.value)}
+                      placeholder="mistralai/Mistral-7B-Instruct-v0.2"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-yellow-500 focus:outline-none"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Recommended: <code>mistralai/Mistral-7B-Instruct-v0.2</code></p>
+                  </div>
+                </div>
+              )}
+
+              {/* Groq Settings */}
+              {provider === 'groq' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+                  <div className="bg-orange-100 dark:bg-orange-900/20 border border-orange-500/30 p-3 rounded-lg text-xs text-orange-800 dark:text-orange-200">
+                    {!groqKey ? (
+                      <span className="font-semibold text-orange-700 dark:text-orange-300">
+                        ⚡ You are using the Free Tier (Limited to {DAILY_LIMIT} msgs/day). Add your own key below for unlimited access.
+                      </span>
+                    ) : (
+                      <span>Using your personal API Key.</span>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Groq API Key</label>
+                    <input 
+                      type="password" 
+                      value={groqKey}
+                      onChange={(e) => setGroqKey(e.target.value)}
+                      placeholder="gsk_..."
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Groq Model</label>
+                    <input 
+                      type="text" 
+                      value={groqModel}
+                      onChange={(e) => setGroqModel(e.target.value)}
+                      placeholder="llama3-8b-8192"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:border-orange-500 focus:outline-none"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Try: <code>llama3-8b-8192</code> or <code>mixtral-8x7b-32768</code></p>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
                 <label className="block text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">Avatar URL</label>
                 <input 
                   type="text" 
